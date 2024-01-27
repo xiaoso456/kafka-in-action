@@ -16,7 +16,7 @@ import java.util.Properties;
 public class KafkaAdminDemo {
     public static void main(String[] args) {
         Properties properties = new Properties();
-        properties.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG,"my-kafka.default.svc.cluster.local:9092");
+        properties.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG,"172.23.111.68:9092");
         // 创建 AdminClient
         try (AdminClient adminClient = AdminClient.create(properties)) {
             // 列出所有 topic
