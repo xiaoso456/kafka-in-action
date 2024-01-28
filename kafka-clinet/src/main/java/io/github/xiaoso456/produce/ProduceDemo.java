@@ -8,7 +8,7 @@ import java.util.Properties;
 public class ProduceDemo {
     public static void main(String[] args) {
         Properties properties = new Properties();
-        properties.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG,"172.23.111.68:9092");
+        properties.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG,"172.31.74.189:9092");
         properties.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
         properties.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
         KafkaProducer<String, String> kafkaProducer = new KafkaProducer<>(properties);

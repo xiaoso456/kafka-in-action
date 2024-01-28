@@ -2,6 +2,14 @@
 
 ## 快速启动
 
+### 单机
+
+```sh
+KAFKA_CLUSTER_ID="$(bin/kafka-storage.sh random-uuid)"
+bin/kafka-storage.sh format -t $KAFKA_CLUSTER_ID -c config/kraft/server.properties
+bin/kafka-server-start.sh config/kraft/server.properties
+```
+
 ## Kafka 常用概念
 
 ISR（in-sync replica set）：和 Leader 保持同步的 Follower+Leader 集合，例如 `leader:0,isr:0,1,2`，如果超过 `replica.lag.time.max.ms`
@@ -35,11 +43,11 @@ Kafka producer 一些常用参数如下:
 
   以下是几种常见的 `compression.type` 选项：
 
-  1. `none`：表示不使用任何压缩。消息将以原始未压缩的形式发送给 Kafka 集群。
-  2. `gzip`：Gzip 提供了较高的压缩比，但会增加一些计算开销。
-  3. `snappy`：Snappy 提供了较低的压缩比，但压缩和解压缩速度较快，适用于高吞吐量的场景。
-  4. `lz4`：LZ4 提供了较高的压缩和解压缩速度，并具有较低的 CPU 开销。
-  5. `zstd`：Zstandard 提供了较高的压缩比和较快的压缩速度，但相对于其他算法，解压缩速度较慢。
+    1. `none`：表示不使用任何压缩。消息将以原始未压缩的形式发送给 Kafka 集群。
+    2. `gzip`：Gzip 提供了较高的压缩比，但会增加一些计算开销。
+    3. `snappy`：Snappy 提供了较低的压缩比，但压缩和解压缩速度较快，适用于高吞吐量的场景。
+    4. `lz4`：LZ4 提供了较高的压缩和解压缩速度，并具有较低的 CPU 开销。
+    5. `zstd`：Zstandard 提供了较高的压缩比和较快的压缩速度，但相对于其他算法，解压缩速度较慢。
 
   compression.type 在生产者端和 broker 端设置，一般不建议设置 broker 端消息压缩类型，可能会造成预料外的压缩 / 解压缩操作导致 CPU 飙升
 
@@ -96,7 +104,7 @@ properties.put(ProducerConfig.ACKS_CONFIG,"-1");
 
 ```java
 // 创建一个名为 test 的 topic, 2 个分区, 2 个副本
-NewTopic newTopic = new NewTopic("test", 2, (short) 2);
+NewTopic newTopic=new NewTopic("test",2,(short)2);
 ```
 
 3. Broker 配置 ISR 最小应答副本数（min.insync.replicas）>=2，修改 `server.properties`
@@ -150,8 +158,45 @@ ConsumerPartitionDemo.java 演示了如何消费指定 topic partition 的消息
 每个分区只会由消费者组中其中一个消费者消费，具有相同 `group.id` 的消费者处于同一个消费者组
 
 ```java
-properties.put(ConsumerConfig.GROUP_ID_CONFIG, "test-topic-group0");
+properties.put(ConsumerConfig.GROUP_ID_CONFIG,"test-topic-group0");
 ```
+
+### commit offset
+
+Kafka 客户端消费者有自动 offset 提交功能，也就是自动设置消费者对特定 partition 的消息位点，让消费者知道消费过哪些消息，相关参数如下：
+
++ enable.auto.commit 是否开启自动提交 offset 功能，默认是 true
++ auto.commit.interval.ms 直动提交 offset 的时间间隔，默认是 5s
+
+如果要手动控制，可以把自动提交关闭，使用手动提交，手动提交会把当前批次 offset 最高的值进行提交
+
+ConsumerOffsetCommitAsync.java 演示了如何使用异步方式提交 Offset，异步提交不会进行重试
+
+ConsumerOffsetCommitSync.java 演示了如何使用同步方式提交 Offset，同步方式提交会阻塞当前线程，自动进行失败重试，直到提交成功
+
+### offset 设置
+
+Kafka 客户端消费者可以通过 `auto.offset.reset` 控制拉取策略，可选值如下：
+
++ earliest
+
+  将 offset 设置为最早偏移量，从头开始消费
+
++ latest
+
+  默认值，自动将偏移量设置为最后提交的偏移量，如果没有提交的偏移量，设置为最新偏移量
+
++ none
+
+  如果未找到消费者组先前的偏移量，则抛出异常
+
+ConsumerOffsetSeek.java 演示了重置 Topic partition 的 offset 到指定位置，从指定 offset 开始消费
+
+ConsumerOffsetTimeSeek.java 演示了重置 Topic partition 的 offset 到指定时间，从某个时间点后开始消费
+
+### Exactly Once
+
+如果要实现 Consumer 端的 Exactly Once，需要将消费过程（Mysql 等）和提交 offset 做原子绑定
 
 ## 其他问题
 
@@ -163,6 +208,42 @@ properties.put(ConsumerConfig.GROUP_ID_CONFIG, "test-topic-group0");
 
 如果开启了幂等性，客户端配置 `max.in.flight.requests.per.connection` <=5，kafka 会缓存同一 connecttion 近 5 个 request
 的元数据，即使部分消息失败，而重试成功，服务器也会将这几个消息重排序
+
+### 消息积压
+
+由于 Kafka 一个 partition 只由一个消费者消费，如果 Kafka 消费者能力不足，考虑增加 partition，增加 consumer，让 partition 数量 =consumer 数量
+
+如果下游支持批处理，考虑提高每次 pull 消息的数量
+
+### 磁盘选择
+
+由于 Kakfa 的实现机制，写数据采取追加方式，基本为顺序读写，顺序读写固态和机械磁盘并不会有显著差异，使用固态并不会显著提升 Kafka 速度
+
+### 磁盘空间预估
+
+Kakfa 默认采取的策略是保存 7 天消息，实际上空间预估需要根据日志保存策略、副本数、冗余空间量（一般为 70%）、数据量决定
+
+可以考虑按如下方式计算：` 每日条数 x 副本数 x 日志保留天数 / 0.7 `
+
+### 内存设置
+
+JVM 堆内存设置取决于 Kafka 集群实际吞吐量，建议压测并根据 GC 情况调整
+
+### 线程配置
+
+kafka 有几个参数和 cpu 线程有关
+
++ num.io.threads
+
+  负责写磁盘的线程数，建议占总 CPU 核数的 50%
+
++ num.replica.fetchers
+
+  副本拉取的线程数
+
++ num.network.threads
+
+  用于网络传输的线程数
 
 ## 参考
 
